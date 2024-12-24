@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: new-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: passwd
+      POSTGRES_DB: sauna_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
