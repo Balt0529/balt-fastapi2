@@ -1,12 +1,18 @@
-from fastapi import FastAPI,Body
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from database import read_users,read_posts,read_favorites,add_users,add_posts,delete_posts
+from sqlalchemy.orm import Session
+from database import init_db, get_db
+from models import User, Post, Favorite, Sauna
 from pydantic import BaseModel
-from typing import Union
-from datetime import datetime
+from typing import List, Optional
+import requests
 
+GOOGLE_PLACES_API_KEY = "AIzaSyDG0HEm5TAa2rp7I2qNp1_G41Qs3Fmej2Q"
+
+# アプリケーション初期化
 app = FastAPI()
 
+# CORSミドルウェア設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,48 +21,167 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Item(BaseModel):
-    name:str
-    price:float
-    is_offer:Union[bool,None]=None
+# アプリ起動時の処理
+@app.on_event("startup")
+def startup_event():
+    init_db()
 
+# Pydanticスキーマ定義
+class UserCreate(BaseModel):
+    id: str
+    email: str
+    name: str
+
+
+class PostCreate(BaseModel):
+    user_id: str
+    sauna_id: int
+    content: Optional[str]
+
+
+class PostResponse(BaseModel):
+    id: int
+    user_id: str
+    sauna_id: int
+    content: Optional[str]
+    created_at: str
+
+    class Config:
+        orm_mode = True
+
+
+class FavoriteCreate(BaseModel):
+    user_id: str
+    sauna_id: int
+
+
+# ルートエンドポイント
 @app.get("/")
 async def root():
-    return {"message": "Hello World From Fast API!"}
+    return {"message": "Welcome to the Sauna App API"}
 
-@app.get("/items/{item_id}")
-def read_item(item_id:int, q:Union[str,None]=None):
-    return {"item_id":item_id,"q":q}
 
-@app.put("/items/{item_id}")
-def update_item(item_id:int,item:Item):
-    return{"item_name":item.name,"item_id":item_id}
+# ユーザー一覧取得
+@app.get("/users", response_model=List[UserCreate], tags=["users"])
+def get_users(db: Session = Depends(get_db)):
+    users = db.query(User).all()
+    return users
 
-#users
-@app.get("/users")
-def get_users():
-    return read_users
 
-@app.post("/users")
-def post_users(id:str=Body(...),email:str=Body(...),name:str=Body(...)):
-    postusers=add_users(id,email,name)
-    return {"id":postusers.id,"email":postusers.email,"name":postusers.name}
+# ユーザー作成
+@app.post("/users", tags=["users"])
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    new_user = User(id=user.id, email=user.email, name=user.name)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
-#posts
-@app.get("/posts")
-def get_posts():
-    return read_posts
 
-# @app.post("/posts")
-# def post_posts(id:int=Body(...),user_id:str=Body(...),place_id:str=Body(...),content:str=Body(...),created_at:datetime=Body(...)):
-#     postposts=add_posts(id,user_id,place_id,content,created_at)
-#     return {"id":postposts.id,"user_id":postposts.user_id,"place_id":postposts.place_id,"content":postposts.content,"created_at":postposts.created_at}
+# サ活投稿作成
+@app.post("/posts", tags=["posts"])
+def create_post(post: PostCreate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == post.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_post = Post(user_id=post.user_id, sauna_id=post.sauna_id, content=post.content)
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    return new_post
 
-# @app.delete("/posts/{id}")
-# def delete_posts_endpoint(id:int):
-#     return delete_posts(id)
 
-#favorites
-@app.get("/favorites")
-def get_favorites():
-    return read_favorites
+# サ活投稿取得
+@app.get("/posts", response_model=List[PostResponse], tags=["posts"])
+def get_posts(user_id: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(Post)
+    if user_id:
+        query = query.filter(Post.user_id == user_id)
+    posts = query.all()
+    return posts
+
+
+# サ活投稿削除
+@app.delete("/posts/{post_id}", tags=["posts"])
+def delete_post(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    db.delete(post)
+    db.commit()
+    return {"message": f"Post {post_id} deleted successfully"}
+
+
+# サウナ検索
+@app.get("/saunas", tags=["saunas"])
+def search_saunas(
+    prefecture: str = Query(None),
+    keyword: str = Query(None),
+):
+    if not (prefecture or keyword):
+        raise HTTPException(status_code=400, detail="検索条件が指定されていません。")
+
+    # Google Places API リクエストの準備
+    location = "35.6895,139.6917"  # デフォルトの中心座標（東京駅付近）
+    radius = 50000  # 半径50km
+    search_keyword = f"{prefecture or ''} {keyword or ''} サウナ".strip()
+
+    url = f"https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {
+        "key": GOOGLE_PLACES_API_KEY,
+        "query": search_keyword,
+        "radius": radius,
+        "location": location,
+    }
+
+    # Google Places APIのリクエスト送信
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Google Places APIのリクエストに失敗しました。")
+
+    # レスポンスの処理
+    google_results = response.json().get("results", [])
+    if not google_results:
+        return {"message": "該当するサウナが見つかりませんでした。"}
+
+    # 結果を加工して返す
+    saunas = [
+        {
+            "id": result.get("place_id"),
+            "name": result.get("name"),
+            "address": result.get("formatted_address", result.get("vicinity", "住所不明")),
+            "rating": result.get("rating"),
+        }
+        for result in google_results
+    ]
+
+    return saunas
+
+
+
+# お気に入り登録
+@app.post("/favorites", tags=["favorites"])
+def add_favorite(favorite: FavoriteCreate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == favorite.user_id).first()
+    sauna = db.query(Sauna).filter(Sauna.id == favorite.sauna_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not sauna:
+        raise HTTPException(status_code=404, detail="Sauna not found")
+    new_favorite = Favorite(user_id=favorite.user_id, sauna_id=favorite.sauna_id)
+    db.add(new_favorite)
+    db.commit()
+    return {"message": "Favorite added"}
+
+
+# お気に入り削除
+@app.delete("/favorites", tags=["favorites"])
+def remove_favorite(user_id: str, sauna_id: int, db: Session = Depends(get_db)):
+    favorite = db.query(Favorite).filter(
+        Favorite.user_id == user_id, Favorite.sauna_id == sauna_id
+    ).first()
+    if not favorite:
+        raise HTTPException(status_code=404, detail="Favorite not found")
+    db.delete(favorite)
+    db.commit()
+    return {"message": f"Favorite for sauna {sauna_id} by user {user_id} removed successfully"}
