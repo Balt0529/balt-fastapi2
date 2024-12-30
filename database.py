@@ -1,12 +1,19 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
+import os
+from dotenv import load_dotenv
 
 # モデル用のBase
 Base = declarative_base()
 
-# 接続先DBの設定
-DATABASE_URL = "postgresql+psycopg2://postgres:passwd@localhost:5433/sauna_db"
+# .envファイルを読み込む
+load_dotenv()
+
+# 環境変数からデータベースURLを取得
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("データベースURLが設定されていません")
 
 # Engine の作成
 engine = create_engine(

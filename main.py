@@ -5,9 +5,20 @@ from database import init_db, get_db
 from models import User, Post, Favorite, Sauna
 from pydantic import BaseModel
 from typing import List, Optional
-import requests
+import requests, os
+from dotenv import load_dotenv
 
-GOOGLE_PLACES_API_KEY = "AIzaSyDG0HEm5TAa2rp7I2qNp1_G41Qs3Fmej2Q"
+# .envファイルを読み込む
+load_dotenv()
+
+# 環境変数からAPIキーとデータベースURLを取得
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not GOOGLE_PLACES_API_KEY:
+    raise ValueError("Google Places APIキーが設定されていません")
+if not DATABASE_URL:
+    raise ValueError("データベースURLが設定されていません")
 
 # アプリケーション初期化
 app = FastAPI()
