@@ -25,7 +25,7 @@ class User(Base):
 class Sauna(Base):
     __tablename__ = 'saunas'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(255), primary_key=True)
     name = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
     prefecture = Column(String(255), nullable=False)  # 都道府県名
@@ -45,7 +45,7 @@ class Post(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(255), ForeignKey('users.id'), nullable=False)
-    sauna_id = Column(Integer, ForeignKey('saunas.id'), nullable=False)
+    sauna_id = Column(String(255), ForeignKey('saunas.id'), nullable=False)
     content = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
 
@@ -62,7 +62,7 @@ class Favorite(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(255), ForeignKey('users.id'), nullable=False)
-    sauna_id = Column(Integer, ForeignKey('saunas.id'), nullable=False)
+    sauna_id = Column(String(255), ForeignKey('saunas.id'), nullable=False)
 
     # Relationship
     user = relationship("User", back_populates="favorites")
