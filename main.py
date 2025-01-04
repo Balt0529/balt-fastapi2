@@ -50,16 +50,6 @@ class PostCreate(BaseModel):
     content: Optional[str]
 
 
-class PostResponse(BaseModel):
-    id: int
-    user_id: str
-    sauna_id: str
-    content: Optional[str]
-    created_at: str
-
-    class Config:
-        orm_mode = True
-
 
 class FavoriteRequest(BaseModel):
     user_id: str
@@ -83,13 +73,15 @@ async def root():
 # ユーザー一覧取得
 @app.get("/users", response_model=List[UserCreate], tags=["users"])
 def get_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return users
+    return db.query(User).all()
 
 
 # ユーザー作成
 @app.post("/users", tags=["users"])
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.id == user.id).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already exists")
     new_user = User(id=user.id, email=user.email, name=user.name)
     db.add(new_user)
     db.commit()
@@ -100,6 +92,9 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 # サ活投稿作成
 @app.post("/posts", tags=["posts"])
 def create_post(post: PostCreate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == post.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     sauna = db.query(Sauna).filter(Sauna.id == post.sauna_id).first()
     if not sauna:
         raise HTTPException(status_code=404, detail="サウナが見つかりません")
@@ -113,10 +108,13 @@ def create_post(post: PostCreate, db: Session = Depends(get_db)):
 
 # サ活投稿取得
 @app.get("/posts", tags=["posts"])
-def get_posts(sauna_id: str = Query(...), db: Session = Depends(get_db)):
-    # sauna_id を文字列としてそのまま扱う
-    posts = db.query(Post).filter(Post.sauna_id == sauna_id).all()
-    return posts
+def get_posts(sauna_id: Optional[str] = Query(None), user_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    query = db.query(Post)
+    if sauna_id:
+        query = query.filter(Post.sauna_id == sauna_id)
+    if user_id:
+        query = query.filter(Post.user_id == user_id)
+    return query.all()
 
 
 
@@ -200,43 +198,85 @@ def get_sauna_details(place_id: str):
     result = response.json().get("result")
     if not result:
         raise HTTPException(status_code=404, detail="サウナが見つかりません。")
+    
+     # 緯度・経度を取得
+    location = result.get("geometry", {}).get("location", {})
+    latitude = location.get("lat")
+    longitude = location.get("lng")
 
     return {
         "name": result.get("name"),
         "address": result.get("formatted_address"),
         "rating": result.get("rating"),
         "photos": result.get("photos", []),
+        "latitude": latitude,
+        "longitude": longitude,
     }
 
+#サウナ保存
+@app.post("/saunas", tags=["saunas"])
+def save_sauna(
+    id: str,
+    name: str,
+    address: str,
+    prefecture: Optional[str],
+    latitude: str,
+    longitude: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Google Places から取得したサウナをデータベースに保存
+    """
+    # サウナが既に存在するか確認
+    existing_sauna = db.query(Sauna).filter(Sauna.id == id).first()
+    if existing_sauna:
+        return {"message": "Sauna already exists", "sauna": existing_sauna}
 
-@app.post("/favorites/")
-async def add_favorite(favorite_request: FavoriteRequest, db: Session = Depends(get_db)):
-    user_id = favorite_request.user_id
-    sauna_id = favorite_request.sauna_id
+    # 新しいサウナを作成
+    new_sauna = Sauna(
+        id=id,
+        name=name,
+        address=address,
+        prefecture=prefecture,
+        latitude=latitude,
+        longitude=longitude,
+    )
+    db.add(new_sauna)
+    db.commit()
+    db.refresh(new_sauna)
+    return {"message": "Sauna saved successfully", "sauna": new_sauna}
 
-    # 重複確認
-    favorite = db.query(Favorite).filter_by(user_id=user_id, sauna_id=sauna_id).first()
+
+
+# お気に入り追加・取得・削除
+@app.post("/favorites", tags=["favorites"])
+def add_favorite(favorite_request: FavoriteRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == favorite_request.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    sauna = db.query(Sauna).filter(Sauna.id == favorite_request.sauna_id).first()
+    if not sauna:
+        raise HTTPException(status_code=404, detail="サウナが見つかりません")
+    favorite = db.query(Favorite).filter_by(user_id=favorite_request.user_id, sauna_id=favorite_request.sauna_id).first()
     if favorite:
-        raise HTTPException(status_code=400, detail="This sauna is already in favorites.")
-    
-    new_favorite = Favorite(user_id=user_id, sauna_id=sauna_id)
+        raise HTTPException(status_code=400, detail="This sauna is already in favorites")
+    new_favorite = Favorite(user_id=favorite_request.user_id, sauna_id=favorite_request.sauna_id)
     db.add(new_favorite)
     db.commit()
     db.refresh(new_favorite)
-    return {"message": "Favorite added successfully.", "favorite": new_favorite}
+    return {"message": "Favorite added successfully", "favorite": new_favorite}
 
-@app.delete("/favorites/")
-async def remove_favorite(user_id: str, sauna_id: str, db: Session = Depends(get_db)):
+@app.get("/favorites/{user_id}", tags=["favorites"])
+def get_favorites(user_id: str, db: Session = Depends(get_db)):
+    favorites = db.query(Favorite).filter(Favorite.user_id == user_id).all()
+    saunas = [db.query(Sauna).filter(Sauna.id == favorite.sauna_id).first() for favorite in favorites]
+    return {"favorites": saunas}
+
+@app.delete("/favorites", tags=["favorites"])
+def remove_favorite(user_id: str, sauna_id: str, db: Session = Depends(get_db)):
     favorite = db.query(Favorite).filter_by(user_id=user_id, sauna_id=sauna_id).first()
     if not favorite:
-        raise HTTPException(status_code=404, detail="Favorite not found.")
-    
+        raise HTTPException(status_code=404, detail="Favorite not found")
     db.delete(favorite)
     db.commit()
-    return {"message": "Favorite removed successfully."}
-
-@app.get("/favorites/{user_id}")
-async def get_favorites(user_id: str, db: Session = Depends(get_db)):
-    favorites = db.query(Favorite).filter_by(user_id=user_id).all()
-    saunas = [db.query(Sauna).filter_by(id=f.sauna_id).first() for f in favorites]
-    return {"favorites": saunas}
+    return {"message": "Favorite removed successfully"}
