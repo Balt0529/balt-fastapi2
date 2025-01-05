@@ -1,11 +1,14 @@
 from sqlalchemy import (
-    Column, String, Integer, Text, ForeignKey, TIMESTAMP,
+    Column, String, Integer, Text, ForeignKey, DateTime, Float
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from datetime import datetime, timedelta
 
 Base = declarative_base()
+
+def get_jst_now():
+    return datetime.utcnow() + timedelta(hours=9)
 
 class User(Base):
     __tablename__ = 'users'
@@ -29,8 +32,8 @@ class Sauna(Base):
     name = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
     prefecture = Column(String(255), nullable=False)  # 都道府県名
-    latitude = Column(Text, nullable=False)
-    longitude = Column(Text, nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
 
     # Relationship
     posts = relationship("Post", back_populates="sauna", cascade="all, delete-orphan")
@@ -47,7 +50,7 @@ class Post(Base):
     user_id = Column(String(255), ForeignKey('users.id'), nullable=False)
     sauna_id = Column(String(255), ForeignKey('saunas.id'), nullable=False)
     content = Column(Text, nullable=True)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=get_jst_now)
 
     # Relationship
     user = relationship("User", back_populates="posts")

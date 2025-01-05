@@ -46,7 +46,7 @@ class UserCreate(BaseModel):
 
 class PostCreate(BaseModel):
     user_id: str
-    sauna_id: str
+    sauna_id: Optional[str]  
     content: Optional[str]
 
 
@@ -89,20 +89,72 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
+def fetch_sauna_details_from_google(place_id: str):
+    """
+    Google Places APIを使用して指定されたplace_idの詳細情報を取得する
+    """
+    url = "https://maps.googleapis.com/maps/api/place/details/json"
+    params = {
+        "place_id": place_id,
+        "key": GOOGLE_PLACES_API_KEY,
+    }
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Google Places API リクエストに失敗しました")
+    result = response.json().get("result")
+    if not result:
+        raise HTTPException(status_code=404, detail="指定されたplace_idに対応するサウナ情報が見つかりません")
+
+    return {
+        "id": place_id,
+        "name": result.get("name"),
+        "address": result.get("formatted_address"),
+        "latitude": result.get("geometry", {}).get("location", {}).get("lat"),
+        "longitude": result.get("geometry", {}).get("location", {}).get("lng"),
+    }
+
+def insert_sauna_to_db(sauna_data: dict, db: Session):
+    """
+    サウナ情報をデータベースに挿入する
+    """
+    existing_sauna = db.query(Sauna).filter(Sauna.id == sauna_data["id"]).first()
+    if existing_sauna:
+        return existing_sauna
+    new_sauna = Sauna(
+        id=sauna_data["id"],
+        name=sauna_data["name"],
+        address=sauna_data["address"],
+        latitude=str(sauna_data["latitude"]),
+        longitude=str(sauna_data["longitude"]),
+    )
+    db.add(new_sauna)
+    db.commit()
+    db.refresh(new_sauna)
+    return new_sauna
+
+
 # サ活投稿作成
 @app.post("/posts", tags=["posts"])
-def create_post(post: PostCreate, db: Session = Depends(get_db)):
+def create_post_with_sauna_registration(post: PostCreate, db: Session = Depends(get_db)):
+    # ユーザーが存在するかチェック
     user = db.query(User).filter(User.id == post.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # サウナが存在するか確認
     sauna = db.query(Sauna).filter(Sauna.id == post.sauna_id).first()
     if not sauna:
-        raise HTTPException(status_code=404, detail="サウナが見つかりません")
-    new_post = Post(user_id=post.user_id, sauna_id=post.sauna_id, content=post.content)
+        # サウナ情報が無ければGoogle Places APIから取得して登録
+        sauna_data = fetch_sauna_details_from_google(post.sauna_id)
+        sauna = insert_sauna_to_db(sauna_data, db)
+
+    # 投稿作成
+    new_post = Post(user_id=post.user_id, sauna_id=sauna.id, content=post.content)
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
-    return new_post
+    return {"message": "Post created successfully", "post": new_post}
+
 
 
 
@@ -212,6 +264,7 @@ def get_sauna_details(place_id: str):
         "latitude": latitude,
         "longitude": longitude,
     }
+
 
 #サウナ保存
 @app.post("/saunas", tags=["saunas"])
