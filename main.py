@@ -46,8 +46,8 @@ class UserCreate(BaseModel):
 
 class PostCreate(BaseModel):
     user_id: str
-    sauna_id: Optional[str]  
-    content: Optional[str]
+    sauna_id: str  
+    content: str
 
 
 
@@ -78,15 +78,24 @@ def get_users(db: Session = Depends(get_db)):
 
 # ユーザー作成
 @app.post("/users", tags=["users"])
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
+def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
+    print("受け取ったユーザー情報:", user)
     existing_user = db.query(User).filter(User.id == user.id).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="User already exists")
+        # ユーザー情報を更新
+        existing_user.email = user.email
+        existing_user.name = user.name
+        db.commit()
+        db.refresh(existing_user)
+        return existing_user
+
+    # 新しいユーザーを作成
     new_user = User(id=user.id, email=user.email, name=user.name)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return new_user
+
 
 
 def fetch_sauna_details_from_google(place_id: str):
