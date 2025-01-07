@@ -387,11 +387,11 @@ def get_favorites(db: Session = Depends(get_db)):
     return {"favorites": favorites}
 
 
-@app.delete("/favorites", tags=["favorites"])
-def remove_favorite(request: RemoveFavoriteRequest, db: Session = Depends(get_db)):
-    favorite = db.query(Favorite).filter_by(user_id=request.user_id, sauna_id=request.sauna_id).first()
+@app.delete("/favorites/{favorite_id}", tags=["favorites"])
+def remove_favorite(favorite_id: int, db: Session = Depends(get_db)):
+    favorite = db.query(Favorite).filter(Favorite.id == favorite_id).first()
     if not favorite:
         raise HTTPException(status_code=404, detail="Favorite not found")
     db.delete(favorite)
     db.commit()
-    return {"message": f"Favorite for sauna {request.sauna_id} removed successfully"}
+    return {"message": f"Favorite {favorite_id} removed successfully"}
