@@ -1,15 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session, joinedload
-from database import init_db, get_db
-from models import User, Post, Favorite, Sauna
-from pydantic import BaseModel
+import os
 from typing import List, Optional
-import requests, os
-from dotenv import load_dotenv
 
-# .envファイルを読み込む
-load_dotenv()
+import requests
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy.orm import Session, joinedload
+
+from database import get_db
+from models import Favorite, Post, Sauna, User
 
 # 環境変数からAPIキーとデータベースURLを取得
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -32,10 +31,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# アプリ起動時の処理
-@app.on_event("startup")
-def startup_event():
-    init_db()
 
 # Pydanticスキーマ定義
 class UserCreate(BaseModel):
@@ -46,14 +41,14 @@ class UserCreate(BaseModel):
 
 class PostCreate(BaseModel):
     user_id: str
-    sauna_id: str  
+    sauna_id: str
     content: str
-
 
 
 class FavoriteRequest(BaseModel):
     user_id: str
     sauna_id: str
+
 
 class FavoriteResponse(BaseModel):
     id: int
@@ -62,6 +57,7 @@ class FavoriteResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
 
 class RemoveFavoriteRequest(BaseModel):
     user_id: str
@@ -101,7 +97,6 @@ def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
-
 def fetch_sauna_details_from_google(place_id: str):
     """
     Google Places APIを使用して指定されたplace_idの詳細情報を取得する
@@ -117,7 +112,7 @@ def fetch_sauna_details_from_google(place_id: str):
     result = response.json().get("result")
     if not result:
         raise HTTPException(status_code=404, detail="指定されたplace_idに対応するサウナ情報が見つかりません")
-    
+
     # 都道府県を取得 (address_components から "administrative_area_level_1" を検索)
     address_components = result.get("address_components", [])
     prefecture = None
@@ -138,6 +133,7 @@ def fetch_sauna_details_from_google(place_id: str):
         "latitude": result.get("geometry", {}).get("location", {}).get("lat"),
         "longitude": result.get("geometry", {}).get("location", {}).get("lng"),
     }
+
 
 def insert_sauna_to_db(sauna_data: dict, db: Session):
     """
@@ -183,13 +179,13 @@ def create_post_with_sauna_registration(post: PostCreate, db: Session = Depends(
     return {"message": "Post created successfully", "post": new_post}
 
 
-
-
 # サ活投稿取得
 @app.get("/posts", tags=["posts"])
-def get_posts(sauna_id: Optional[str] = Query(None), user_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+def get_posts(
+    sauna_id: Optional[str] = Query(None), user_id: Optional[str] = Query(None), db: Session = Depends(get_db)
+):
     query = db.query(Post).options(joinedload(Post.user), joinedload(Post.sauna))
-    
+
     if sauna_id:
         query = query.filter(Post.sauna_id == sauna_id)
     if user_id:
@@ -216,7 +212,6 @@ def get_posts(sauna_id: Optional[str] = Query(None), user_id: Optional[str] = Qu
     ]
 
 
-
 # サ活投稿削除
 @app.delete("/posts/{post_id}", tags=["posts"])
 def delete_post(post_id: int, db: Session = Depends(get_db)):
@@ -234,7 +229,6 @@ def search_saunas(
     prefecture: str = Query(None),
     keyword: str = Query(None),
 ):
-    
     # クエリログを出力
     print(f"Received prefecture: {prefecture}, keyword: {keyword}")
 
@@ -246,7 +240,7 @@ def search_saunas(
     radius = 50000  # 半径50km
     search_keyword = f"{prefecture or ''} {keyword or ''} サウナ".strip()
 
-    url = f"https://maps.googleapis.com/maps/api/place/textsearch/json"
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "key": GOOGLE_PLACES_API_KEY,
         "query": search_keyword,
@@ -281,7 +275,8 @@ def search_saunas(
 
     return saunas
 
-#サウナ詳細
+
+# サウナ詳細
 @app.get("/saunas/{place_id}")
 def get_sauna_details(place_id: str):
     url = "https://maps.googleapis.com/maps/api/place/details/json"
@@ -292,12 +287,12 @@ def get_sauna_details(place_id: str):
     response = requests.get(url, params=params)
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Google Places API リクエストに失敗しました。")
-    
+
     result = response.json().get("result")
     if not result:
         raise HTTPException(status_code=404, detail="サウナが見つかりません。")
-    
-     # 緯度・経度を取得
+
+    # 緯度・経度を取得
     location = result.get("geometry", {}).get("location", {})
     latitude = location.get("lat")
     longitude = location.get("lng")
@@ -312,7 +307,7 @@ def get_sauna_details(place_id: str):
     }
 
 
-#サウナ保存
+# サウナ保存
 @app.post("/saunas", tags=["saunas"])
 def save_sauna(
     id: str,
@@ -346,12 +341,9 @@ def save_sauna(
     return {"message": "Sauna saved successfully", "sauna": new_sauna}
 
 
-
 # お気に入り追加・取得・削除
 @app.post("/favorites", tags=["favorites"])
-def create_favorite_with_sauna_registration(
-    favorite_request: FavoriteRequest, db: Session = Depends(get_db)
-):
+def create_favorite_with_sauna_registration(favorite_request: FavoriteRequest, db: Session = Depends(get_db)):
     # ユーザーが存在するか確認
     user = db.query(User).filter(User.id == favorite_request.user_id).first()
     if not user:
@@ -365,11 +357,7 @@ def create_favorite_with_sauna_registration(
         sauna = insert_sauna_to_db(sauna_data, db)
 
     # お気に入りが既に登録されていないか確認
-    existing_favorite = (
-        db.query(Favorite)
-        .filter_by(user_id=favorite_request.user_id, sauna_id=sauna.id)
-        .first()
-    )
+    existing_favorite = db.query(Favorite).filter_by(user_id=favorite_request.user_id, sauna_id=sauna.id).first()
     if existing_favorite:
         raise HTTPException(status_code=400, detail="This sauna is already in favorites")
 
@@ -380,6 +368,7 @@ def create_favorite_with_sauna_registration(
     db.refresh(new_favorite)
 
     return {"message": "Favorite created successfully", "favorite": new_favorite}
+
 
 @app.get("/favorites", tags=["favorites"])
 def get_favorites(db: Session = Depends(get_db)):

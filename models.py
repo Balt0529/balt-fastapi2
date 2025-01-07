@@ -1,17 +1,20 @@
-from sqlalchemy import (
-    Column, String, Integer, Text, ForeignKey, DateTime, Float
-)
-from sqlalchemy.orm import relationship
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime, timedelta
+from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
+JST = timezone(timedelta(hours=+9), "JST")
+
+
 def get_jst_now():
-    return datetime.utcnow() + timedelta(hours=9)
+    return datetime.now(JST)
+
 
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(String(255), primary_key=True)
     email = Column(String(255), nullable=False, unique=True)
@@ -26,7 +29,7 @@ class User(Base):
 
 
 class Sauna(Base):
-    __tablename__ = 'saunas'
+    __tablename__ = "saunas"
 
     id = Column(String(255), primary_key=True)
     name = Column(String(255), nullable=False)
@@ -44,11 +47,11 @@ class Sauna(Base):
 
 
 class Post(Base):
-    __tablename__ = 'posts'
+    __tablename__ = "posts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(255), ForeignKey('users.id'), nullable=False)
-    sauna_id = Column(String(255), ForeignKey('saunas.id'), nullable=False)
+    user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
+    sauna_id = Column(String(255), ForeignKey("saunas.id"), nullable=False)
     content = Column(Text, nullable=True)
     created_at = Column(DateTime, default=get_jst_now)
 
@@ -61,11 +64,11 @@ class Post(Base):
 
 
 class Favorite(Base):
-    __tablename__ = 'favorites'
+    __tablename__ = "favorites"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(255), ForeignKey('users.id'), nullable=False)
-    sauna_id = Column(String(255), ForeignKey('saunas.id'), nullable=False)
+    user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
+    sauna_id = Column(String(255), ForeignKey("saunas.id"), nullable=False)
 
     # Relationship
     user = relationship("User", back_populates="favorites")

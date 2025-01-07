@@ -5,9 +5,19 @@ name = "pypi"
 
 [packages]
 fastapi = {extras = ["standard"], version = "*"}
+sqlalchemy = "*"
+psycopg2-binary = "*"
+requests = "*"
 
 [dev-packages]
+alembic = "*"
+
+[scripts]
+dev = "fastapi dev main.py"
+run = "fastapi run main.py"
+migrate-up = "alembic upgrade"
+migrate-down = "alembic downgrade"
+migrate-gen = "alembic revision --autogenerate"
 
 [requires]
 python_version = "3.12"
-python_full_version = "3.12.7"
