@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db, init_db
+from database import get_db
 from models import Favorite, Post, Sauna, User
 
 # 環境変数からAPIキーとデータベースURLを取得
@@ -30,12 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# アプリ起動時の処理
-@app.on_event("startup")
-def startup_event():
-    init_db()
 
 
 # Pydanticスキーマ定義

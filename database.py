@@ -26,11 +26,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 ScopedSession = scoped_session(SessionLocal)
 
 
-# データベース初期化
-def init_db():
-    Base.metadata.create_all(bind=engine)
-
-
 # データベースセッションを取得する関数
 def get_db():
     db = SessionLocal()
