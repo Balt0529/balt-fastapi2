@@ -10,7 +10,7 @@ JST = timezone(timedelta(hours=+9), "JST")
 
 
 def get_jst_now():
-    return datetime.now(JST)
+    return datetime.now() + timedelta(hours=+9)
 
 
 class User(Base):
