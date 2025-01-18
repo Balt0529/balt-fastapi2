@@ -371,16 +371,24 @@ def create_favorite_with_sauna_registration(favorite_request: FavoriteRequest, d
 
 
 @app.get("/favorites", tags=["favorites"])
-def get_favorites(db: Session = Depends(get_db)):
-    favorites = db.query(Favorite).all()
+def get_favorites(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    特定のユーザーのお気に入りを取得する
+    """
+    favorites = db.query(Favorite).filter(Favorite.user_id == user_id).all()
     return {"favorites": favorites}
 
 
 @app.delete("/favorites/{favorite_id}", tags=["favorites"])
-def remove_favorite(favorite_id: int, db: Session = Depends(get_db)):
-    favorite = db.query(Favorite).filter(Favorite.id == favorite_id).first()
+def remove_favorite(favorite_id: int, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    特定のユーザーが所有するお気に入りだけ削除可能にする
+    """
+    favorite = db.query(Favorite).filter(
+        Favorite.id == favorite_id, Favorite.user_id == user_id
+    ).first()
     if not favorite:
-        raise HTTPException(status_code=404, detail="Favorite not found")
+        raise HTTPException(status_code=404, detail="Favorite not found or not owned by user")
     db.delete(favorite)
     db.commit()
     return {"message": f"Favorite {favorite_id} removed successfully"}
